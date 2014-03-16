@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 
+// Determine which version of GLUT to load
 #if defined(__APPLE_CC__)
     #include <GLUT/glut.h>
 #else
@@ -13,47 +14,53 @@ Compilation command:
 gcc -framework GLUT -framework OpenGL main.c -o main
 */
 
-// Declare viewport information
+// Viewport information
 unsigned int window_width = 512, window_height = 512;
 
-// Define a struct to represent RGB float values
+// STRUCTS
+// Struct to represent RGB float values
 typedef struct {
     float r;
     float g;
     float b;
 } RGBf;
 
-// Define a struct to represent vectors
+// Struct to represent 3-dimensional vectors
 typedef struct {
     float x;
     float y;
     float z;
 } Vector;
 
-// Define a struct to represent a sphere
+// Struct to represent a sphere
 typedef struct {
     float r;
     Vector c;
     RGBf color;
 } Sphere;
 
+// Struct to represent a ray
 typedef struct {
     Vector direction;
     Vector origin;
 } Ray;
 
-// Convert int RGB values (on a [0,255] scale) to float RGB values
+// RGB OPERATIONS
+// Convert int RGB values (on a [0,255] scale) to float RGB values (normalize it)
 void setPixelRGB(float red, float green, float blue, RGBf* out) {
     out->r = red / 255;
     out->b = blue / 255;
     out->g = green / 255;
 }
+
+// Same as above, but takes in an RGBf that hasn't been normalized
 void setPixelColor(RGBf pixelColor, RGBf* pixel) {
     pixel->r = pixelColor.r / 255;
     pixel->g = pixelColor.g / 255;
     pixel->b = pixelColor.b / 255;
 }
 
+// Scale a color by a constant float value
 RGBf scaleRGB(RGBf rgb, float value) {
     RGBf result;
     result.r = rgb.r * value;
@@ -61,6 +68,8 @@ RGBf scaleRGB(RGBf rgb, float value) {
     result.b = rgb.b * value;
     return result;
 }
+
+// Add two colors together
 RGBf addRGB(RGBf a, RGBf b) {
     RGBf result;
     result.r = a.r + b.r;
@@ -69,15 +78,17 @@ RGBf addRGB(RGBf a, RGBf b) {
     return result;
 }
 
-
+// VECTOR OPERATIONS
 // Compute the magnitude of a vector
 float mag(Vector v) {
     return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
 }
+
 // Compute the dot product of two vectors
 float dot(Vector a, Vector b) {
     return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
 }
+
 // Scale a vector by a constant value
 Vector scaleVector(float value, Vector v) {
     Vector newV;
@@ -86,6 +97,7 @@ Vector scaleVector(float value, Vector v) {
     newV.z = v.z * value;
     return newV;
 }
+
 // Compute the cross-product of two vectors
 Vector cross(Vector a, Vector b) {
     Vector v;
@@ -94,6 +106,7 @@ Vector cross(Vector a, Vector b) {
     v.z = a.x*b.y - a.y*b.x;
     return v;
 }
+
 // Compute the addition of two vectors
 Vector addVector(Vector a, Vector b) {
     Vector v;
@@ -102,13 +115,13 @@ Vector addVector(Vector a, Vector b) {
     v.z = a.z + b.z;
     return v;
 }
+
 // Compute a vector produced by substracting a vector from another
 Vector minusVector(Vector a, Vector b) {
     return addVector(a, scaleVector(-1,b));
 }
 
-
-
+// Display method generates the image
 void display(void) {
     // Reset drawing window
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -275,18 +288,25 @@ void display(void) {
     // Draw the pixel array
     glDrawPixels(window_width, window_height, GL_RGB, GL_FLOAT, pixels);
 
+    // Reset buffer for next frame
     glutSwapBuffers();
 }
 
-void reshape(int width, int height) { glViewport(0, 0, width, height); }
-void idle(void) { glutPostRedisplay(); }
+void reshape(int width, int height) {
+    glViewport(0, 0, width, height);
+}
+
+void idle(void) {
+    glutPostRedisplay();
+}
+
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
 
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
     glutInitWindowSize(window_width, window_height);
 
-    (void)glutCreateWindow("CAP 4730 - HW01 - Part 3");
+    (void)glutCreateWindow("CAP 4730 | Advanced Ray-Tracer");
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutIdleFunc(idle);
