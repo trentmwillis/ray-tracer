@@ -14,9 +14,6 @@ Compilation command:
 gcc -framework GLUT -framework OpenGL main.c -o main
 */
 
-// Viewport information
-unsigned int window_width = 512, window_height = 512;
-
 // STRUCTS
 // Struct to represent RGB float values
 typedef struct {
@@ -121,19 +118,76 @@ Vector minusVector(Vector a, Vector b) {
     return addVector(a, scaleVector(-1,b));
 }
 
-// Display method generates the image
-void display(void) {
-    // Reset drawing window
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+// GLOBAL VARIABLES
+unsigned int window_width = 512, window_height = 512;
+unsigned int numSpheres = 2;
+float pixels[512*512*3];
+Sphere spheres[2];
+Vector e;
+Vector viewDirection;
+Vector up;
+Vector w;
 
-    // Declare variables for pixel array
-    float pixels[window_width*window_height*3];
-    int pixel = 0;
+Vector n;           // Surface normal
 
-    // Create spheres
-    int numSpheres = 2;
-    Sphere spheres[numSpheres];
+float lightI = 1;   // Light Intensity
+Vector lightDir;    // Light direction (unit vector)
 
+Ray ray;
+
+RGBf specColor; // The color of the specular highlight
+unsigned int specPow = 20;
+
+float ambientLightI = 0.2;  // Ambient light intensity
+
+// Variable to represent image plane
+float l = -10, r = 10;
+float b = -10, t = 10;
+
+// Basis vectors, must be unit vectors
+Vector w;
+Vector u;
+Vector v;
+
+
+void init() {
+    // The viewpoint, e
+    e.x = 10;
+    e.y = 10;
+    e.z = 10;
+
+    // The view direction (which way we're looking)
+    viewDirection.x = -1;
+    viewDirection.y = -1;
+    viewDirection.z = -1;
+
+    // Vector representing global up
+    up.x = 0;
+    up.y = 1;
+    up.z = 0;
+
+    // Calculate basis vectors
+    w = scaleVector(-1/mag(viewDirection), viewDirection);   // The view direction is -w
+    Vector upCrossW = cross(up, w);
+    u = scaleVector(1/mag(upCrossW), upCrossW);
+    v = cross(w, u);
+
+    // Variable for the ray
+    ray.origin = e;
+    ray.direction = scaleVector(-1, w);
+
+    // Variables for diffuse shading
+    lightDir.x = -1;
+    lightDir.y = 1;
+    lightDir.z = 0;
+    lightDir = scaleVector(1/mag(lightDir),lightDir);
+
+    // Initialize specular color
+    specColor.r = 150;
+    specColor.g = 150;
+    specColor.b = 150;
+
+    // Create Spheres
     spheres[0].r = 1;
     spheres[0].c.x = 3;
     spheres[0].c.y = 3;
@@ -149,139 +203,96 @@ void display(void) {
     spheres[1].color.b = 255;
     spheres[1].color.r = 0;
     spheres[1].color.g = 0;
+}
 
-    // The viewpoint, e
-    Vector e;
-        e.x = 10;
-        e.y = 10;
-        e.z = 10;
+void castRay(int i, int j) {
+    // Index of the pixel we are working on
+    int pixel = (i*window_width*3) + (j*3);
 
-    // The view direction (which way we're looking)
-    Vector viewDirection;
-        viewDirection.x = -1;
-        viewDirection.y = -1;
-        viewDirection.z = -1;
+    // Compute viewing ray
+    float vs = l + (r-l) * (i+0.5) / window_height;      // Vertical displacement
+    float us = b + (t-b) * (j+0.5) / window_width;       // Horizontal displacement
 
-    // Vector representing global up
-    Vector up;
-        up.x = 0;
-        up.y = 1;
-        up.z = 0;
+    ray.origin = addVector(e, addVector(scaleVector(us, u), scaleVector(vs, v)));
 
-    // The three basis vectors, must be unit vectors
-    Vector w = scaleVector(-1/mag(viewDirection), viewDirection);   // The view direction is -w
-    Vector upCrossW = cross(up, w);
-    Vector u = scaleVector(1/mag(upCrossW), upCrossW);
-    Vector v = cross(w, u);
+    //Check for hits with Spheres
+    for (int k=0; k<numSpheres; k++) {
+        // Compute discriminate
+        // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
+        Vector eMinusC = minusVector(ray.origin, spheres[k].c);
+        float d2 = dot(ray.direction, ray.direction);
+        float discriminate = dot(ray.direction, eMinusC);
+        discriminate *= discriminate;
+        discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(spheres[k].r, 2.0)));
 
-    // Variable for the ray
-    Ray ray;
-        ray.origin = e;
-        ray.direction = scaleVector(-1, w);
-
-    // Variables for diffuse shading
-    float lightI = 1;   // Light Intensity
-    Vector n;           // Surface normal
-    Vector lightDir;
-        lightDir.x = -1;
-        lightDir.y = 1;
-        lightDir.z = 0;
-    lightDir = scaleVector(1/mag(lightDir),lightDir);
-
-    // Variables for specular shading
-    int specPow = 20;
-    RGBf specColor;
-        specColor.r = 150;
-        specColor.g = 150;
-        specColor.b = 150;
-
-    // Variables for ambient shading
-    float ambientLightI = 0.2;
-
-    // Initialize variables representing the image plane
-    float l = -10; float r = 10;
-    float b = -10; float t = 10;
-
-    // Ray-Tracing Loop
-    for (int i=0; i<window_height; i++) {        // Row
-        for (int j=0; j<window_width; j++) {     // Column
-
-            // Index of the pixel we are working on
-            pixel = (i*window_width*3) + (j*3);
-
-            // Compute viewing ray
-            float vs = l + (r-l) * (i+0.5) / window_height;      // Vertical displacement
-            float us = b + (t-b) * (j+0.5) / window_width;       // Horizontal displacement
-
-            ray.origin = addVector(e, addVector(scaleVector(us, u), scaleVector(vs, v)));
-
-            //Check for hits with Spheres
-            for (int k=0; k<numSpheres; k++) {
-                // Compute discriminate
-                // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
-                Vector eMinusC = minusVector(ray.origin, spheres[k].c);
-                float d2 = dot(ray.direction, ray.direction);
-                float discriminate = dot(ray.direction, eMinusC);
-                discriminate *= discriminate;
-                discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(spheres[k].r, 2.0)));
-
-                // Check if ray hits sphere and color accordingly
-                if (discriminate < 0) { // No hit
-                    setPixelRGB(0, 0, 0, (RGBf*) &pixels[pixel]);
-                } else {                // Hit
-                    // DIFFUSE SHADING
-                    // Calculate p, point of intersection, p = e+td
-                    // Solve quadratic for t
-                    // t = -d . (e-c) +- discriminate / d.d
-                    float t = dot(scaleVector(-1, ray.direction), eMinusC);
-                    t += sqrt(discriminate);
-                    if (t < 0) {
-                        t = t - (2*sqrt(discriminate));
-                    }
-                    if (t < 0) {
-                        setPixelRGB(0, 0, 0, (RGBf*) &pixels[pixel]);
-                        break;
-                    }
-                    t = t / d2;
-
-                    // Compute p
-                    Vector p = addVector(ray.origin, scaleVector(t, ray.direction));
-
-                    // Calculate surface normal n = (p-c)/R
-                    Vector n = scaleVector(1/spheres[k].r, minusVector(p,spheres[k].c));
-
-                    // Calculate pixel color = lightIntensity * surfaceColor * max(0,n.l);
-                    float nl = dot(n, lightDir);
-                    float max = (nl > 0) ? nl : 0;
-                    float scale = lightI * max;
-                    
-                    RGBf pixelColor;
-                    pixelColor = scaleRGB(spheres[k].color, scale);
-
-                    // SPECULAR SHADING
-                    // h = (v+l) / mag(v+l)
-                    Vector viewingRay = scaleVector(1/mag(ray.direction), ray.direction);
-
-                    Vector h = addVector(viewingRay, lightDir);
-                    h = scaleVector(1/mag(h),h);
-
-                    float nh = dot(n,h);
-
-                    max = (nh > 0) ? nh : 0;
-                    max = pow(max, specPow);
-
-                    scale = max * lightI;
-
-                    pixelColor = addRGB(pixelColor, scaleRGB(specColor, scale));
-
-                    // AMBIENT SHADING
-                    pixelColor = addRGB(pixelColor, scaleRGB(spheres[k].color, ambientLightI));
-
-                    setPixelColor(pixelColor, (RGBf*) &pixels[pixel]);
-
-                    break;
-                }
+        // Check if ray hits sphere and color accordingly
+        if (discriminate < 0) { // No hit
+            setPixelRGB(100, 100, 100, (RGBf*) &pixels[pixel]);
+        } else {                // Hit
+            // DIFFUSE SHADING
+            // Calculate p, point of intersection, p = e+td
+            // Solve quadratic for t
+            // t = -d . (e-c) +- discriminate / d.d
+            float t = dot(scaleVector(-1, ray.direction), eMinusC);
+            t += sqrt(discriminate);
+            if (t < 0) {
+                t = t - (2*sqrt(discriminate));
             }
+            if (t < 0) {
+                setPixelRGB(0, 0, 0, (RGBf*) &pixels[pixel]);
+                break;
+            }
+            t = t / d2;
+
+            // Compute p
+            Vector p = addVector(ray.origin, scaleVector(t, ray.direction));
+
+            // Calculate surface normal n = (p-c)/R
+            Vector n = scaleVector(1/spheres[k].r, minusVector(p,spheres[k].c));
+
+            // Calculate pixel color = lightIntensity * surfaceColor * max(0,n.l);
+            float nl = dot(n, lightDir);
+            float max = (nl > 0) ? nl : 0;
+            float scale = lightI * max;
+            
+            RGBf pixelColor;
+            pixelColor = scaleRGB(spheres[k].color, scale);
+
+            // SPECULAR SHADING
+            // h = (v+l) / mag(v+l)
+            Vector viewingRay = scaleVector(1/mag(ray.direction), ray.direction);
+
+            Vector h = addVector(viewingRay, lightDir);
+            h = scaleVector(1/mag(h),h);
+
+            float nh = dot(n,h);
+
+            max = (nh > 0) ? nh : 0;
+            max = pow(max, specPow);
+
+            scale = max * lightI;
+
+            pixelColor = addRGB(pixelColor, scaleRGB(specColor, scale));
+
+            // AMBIENT SHADING
+            pixelColor = addRGB(pixelColor, scaleRGB(spheres[k].color, ambientLightI));
+
+            setPixelColor(pixelColor, (RGBf*) &pixels[pixel]);
+
+            break;
+        }
+    }
+}
+
+// Display method generates the image
+void display(void) {
+    // Reset drawing window
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Ray-tracing loop
+    for (int i=0; i<window_height; i++) {
+        for (int j=0; j<window_width; j++) {
+            castRay(i, j);
         }
     }
 
@@ -302,11 +313,12 @@ void idle(void) {
 
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
+    init();
 
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
     glutInitWindowSize(window_width, window_height);
 
-    (void)glutCreateWindow("CAP 4730 | Advanced Ray-Tracer");
+    (void)glutCreateWindow("CAP 4730 | Final Project | Advanced Ray-Tracer");
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutIdleFunc(idle);
