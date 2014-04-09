@@ -43,6 +43,15 @@ typedef struct {
 } Ray;
 
 // RGB OPERATIONS
+// Create an RGBf with the given values
+RGBf newRGB(float red, float green, float blue) {
+    RGBf result;
+    result.r = red;
+    result.g = green;
+    result.b = blue;
+    return result;
+}
+
 // Convert int RGB values (on a [0,255] scale) to float RGB values (normalize it)
 void setPixelRGB(float red, float green, float blue, RGBf* out) {
     out->r = red / 255;
@@ -59,23 +68,24 @@ void setPixelColor(RGBf pixelColor, RGBf* pixel) {
 
 // Scale a color by a constant float value
 RGBf scaleRGB(RGBf rgb, float value) {
-    RGBf result;
-    result.r = rgb.r * value;
-    result.g = rgb.g * value;
-    result.b = rgb.b * value;
-    return result;
+    return newRGB(rgb.r * value, rgb.g * value, rgb.b * value);
 }
 
 // Add two colors together
 RGBf addRGB(RGBf a, RGBf b) {
-    RGBf result;
-    result.r = a.r + b.r;
-    result.g = a.g + b.g;
-    result.b = a.b + b.b;
-    return result;
+    return newRGB(a.r + b.r, a.g + b.g, a.b + b.b);
 }
 
 // VECTOR OPERATIONS
+// Create a new Vector with the given values
+Vector newVector(float x, float y, float z) {
+    Vector result;
+    result.x = x;
+    result.y = y;
+    result.z = z;
+    return result;
+}
+
 // Compute the magnitude of a vector
 float mag(Vector v) {
     return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
@@ -88,29 +98,17 @@ float dot(Vector a, Vector b) {
 
 // Scale a vector by a constant value
 Vector scaleVector(float value, Vector v) {
-    Vector newV;
-    newV.x = v.x * value;
-    newV.y = v.y * value;
-    newV.z = v.z * value;
-    return newV;
+    return newVector(v.x * value, v.y * value, v.z * value);
 }
 
 // Compute the cross-product of two vectors
 Vector cross(Vector a, Vector b) {
-    Vector v;
-    v.x = a.y*b.z - a.z*b.y;
-    v.y = a.z*b.x - a.x*b.z;
-    v.z = a.x*b.y - a.y*b.x;
-    return v;
+    return newVector(a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x);
 }
 
 // Compute the addition of two vectors
 Vector addVector(Vector a, Vector b) {
-    Vector v;
-    v.x = a.x + b.x;
-    v.y = a.y + b.y;
-    v.z = a.z + b.z;
-    return v;
+    return newVector(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
 // Compute a vector produced by substracting a vector from another
@@ -120,9 +118,9 @@ Vector minusVector(Vector a, Vector b) {
 
 // GLOBAL VARIABLES
 unsigned int window_width = 512, window_height = 512;
-unsigned int numSpheres = 2;
+unsigned int numSpheres = 3;
 float pixels[512*512*3];
-Sphere spheres[2];
+Sphere spheres[3];
 Vector e;
 Vector viewDirection;
 Vector up;
@@ -152,19 +150,13 @@ Vector v;
 
 void init() {
     // The viewpoint, e
-    e.x = 10;
-    e.y = 10;
-    e.z = 10;
+    e = newVector(10, 0, 0);
 
     // The view direction (which way we're looking)
-    viewDirection.x = -1;
-    viewDirection.y = -1;
-    viewDirection.z = -1;
+    viewDirection = newVector(-1, 0, 0);
 
     // Vector representing global up
-    up.x = 0;
-    up.y = 1;
-    up.z = 0;
+    up = newVector(0, 1, 0);
 
     // Calculate basis vectors
     w = scaleVector(-1/mag(viewDirection), viewDirection);   // The view direction is -w
@@ -177,59 +169,36 @@ void init() {
     ray.direction = scaleVector(-1, w);
 
     // Variables for diffuse shading
-    lightDir.x = -1;
-    lightDir.y = 1;
-    lightDir.z = 0;
+    lightDir = newVector(-1, 1, 0);
     lightDir = scaleVector(1/mag(lightDir),lightDir);
 
     // Initialize specular color
-    specColor.r = 150;
-    specColor.g = 150;
-    specColor.b = 150;
+    specColor = newRGB(150, 150, 150);
 
     // Create Spheres
     spheres[0].r = 1;
-    spheres[0].c.x = 3;
-    spheres[0].c.y = 3;
-    spheres[0].c.z = 0;
-    spheres[0].color.r = 255;
-    spheres[0].color.g = 255;
-    spheres[0].color.b = 0;
+    spheres[0].c = newVector(3, 3, 0);
+    spheres[0].color = newRGB(255, 255, 0);
 
     spheres[1].r = 1.5;
-    spheres[1].c.x = 0;
-    spheres[1].c.y = 0;
-    spheres[1].c.z = 0;
-    spheres[1].color.b = 255;
-    spheres[1].color.r = 0;
-    spheres[1].color.g = 0;
+    spheres[1].c = newVector(0, 0, 0);
+    spheres[1].color = newRGB(0, 0, 255);
+
+    spheres[2].r = 100;
+    spheres[2].c = newVector(0, -100, 0);
+    spheres[2].color = newRGB(0, 255, 0);
 }
 
-void castRay(int i, int j) {
-    // Index of the pixel we are working on
-    int pixel = (i*window_width*3) + (j*3);
-
-    // Compute viewing ray
-    float vs = l + (r-l) * (i+0.5) / window_height;      // Vertical displacement
-    float us = b + (t-b) * (j+0.5) / window_width;       // Horizontal displacement
-
-    ray.origin = addVector(e, addVector(scaleVector(us, u), scaleVector(vs, v)));
-
-    //Check for hits with Spheres
-    for (int k=0; k<numSpheres; k++) {
+Vector intersect(Ray ray, Sphere sphere) {
         // Compute discriminate
         // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
-        Vector eMinusC = minusVector(ray.origin, spheres[k].c);
+        Vector eMinusC = minusVector(ray.origin, sphere.c);
         float d2 = dot(ray.direction, ray.direction);
         float discriminate = dot(ray.direction, eMinusC);
         discriminate *= discriminate;
-        discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(spheres[k].r, 2.0)));
+        discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(sphere.r, 2.0)));
 
-        // Check if ray hits sphere and color accordingly
-        if (discriminate < 0) { // No hit
-            setPixelRGB(100, 100, 100, (RGBf*) &pixels[pixel]);
-        } else {                // Hit
-            // DIFFUSE SHADING
+        if (discriminate > 0) {
             // Calculate p, point of intersection, p = e+td
             // Solve quadratic for t
             // t = -d . (e-c) +- discriminate / d.d
@@ -239,13 +208,42 @@ void castRay(int i, int j) {
                 t = t - (2*sqrt(discriminate));
             }
             if (t < 0) {
-                setPixelRGB(0, 0, 0, (RGBf*) &pixels[pixel]);
+                return pixelColor;
                 break;
             }
             t = t / d2;
 
             // Compute p
-            Vector p = addVector(ray.origin, scaleVector(t, ray.direction));
+            return addVector(ray.origin, scaleVector(t, ray.direction));
+        } else {
+            return &NULL;
+        }
+}
+
+void castShadowRay(Vector p) {
+    // Calculate ray from point to light source
+
+    // See if ray hits any objects
+
+}
+
+RGBf castRay(int i, int j) {
+    RGBf pixelColor = newRGB(100,100,100);
+
+    // Compute viewing ray
+    float vs = l + (r-l) * (i+0.5) / window_height;      // Vertical displacement
+    float us = b + (t-b) * (j+0.5) / window_width;       // Horizontal displacement
+
+    ray.origin = addVector(e, addVector(scaleVector(us, u), scaleVector(vs, v)));
+
+    //Check for hits with Spheres
+    for (int k=0; k<numSpheres; k++) {
+        // Check if ray hits sphere and color accordingly
+        Vector p = intersect(ray, spheres[k]);
+
+        if (p != NULL) {                // Hit
+            // Send out reflection, refraction, and shadow rays
+            castShadowRay(p);
 
             // Calculate surface normal n = (p-c)/R
             Vector n = scaleVector(1/spheres[k].r, minusVector(p,spheres[k].c));
@@ -255,7 +253,6 @@ void castRay(int i, int j) {
             float max = (nl > 0) ? nl : 0;
             float scale = lightI * max;
             
-            RGBf pixelColor;
             pixelColor = scaleRGB(spheres[k].color, scale);
 
             // SPECULAR SHADING
@@ -277,11 +274,11 @@ void castRay(int i, int j) {
             // AMBIENT SHADING
             pixelColor = addRGB(pixelColor, scaleRGB(spheres[k].color, ambientLightI));
 
-            setPixelColor(pixelColor, (RGBf*) &pixels[pixel]);
-
-            break;
+            return pixelColor;
         }
     }
+
+    return pixelColor;
 }
 
 // Display method generates the image
@@ -292,7 +289,7 @@ void display(void) {
     // Ray-tracing loop
     for (int i=0; i<window_height; i++) {
         for (int j=0; j<window_width; j++) {
-            castRay(i, j);
+            setPixelColor(castRay(i,j), &pixels[(i*window_width*3) + (j*3)]);
         }
     }
 
