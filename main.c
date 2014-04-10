@@ -169,7 +169,7 @@ void init() {
     ray.direction = scaleVector(-1, w);
 
     // Variables for diffuse shading
-    lightDir = newVector(-1, 1, 0);
+    lightDir = newVector(0, 1, 1);
     lightDir = scaleVector(1/mag(lightDir),lightDir);
 
     // Initialize specular color
@@ -189,42 +189,56 @@ void init() {
     spheres[2].color = newRGB(0, 255, 0);
 }
 
-Vector intersect(Ray ray, Sphere sphere) {
-        // Compute discriminate
-        // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
-        Vector eMinusC = minusVector(ray.origin, sphere.c);
-        float d2 = dot(ray.direction, ray.direction);
-        float discriminate = dot(ray.direction, eMinusC);
-        discriminate *= discriminate;
-        discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(sphere.r, 2.0)));
+GLboolean intersect(Ray ray, Sphere sphere) {
+    // Compute discriminate
+    // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
+    Vector eMinusC = minusVector(ray.origin, sphere.c);
+    float d2 = dot(ray.direction, ray.direction);
+    float discriminate = dot(ray.direction, eMinusC);
+    discriminate *= discriminate;
+    discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(sphere.r, 2.0)));
 
-        if (discriminate > 0) {
-            // Calculate p, point of intersection, p = e+td
-            // Solve quadratic for t
-            // t = -d . (e-c) +- discriminate / d.d
-            float t = dot(scaleVector(-1, ray.direction), eMinusC);
-            t += sqrt(discriminate);
-            if (t < 0) {
-                t = t - (2*sqrt(discriminate));
-            }
-            if (t < 0) {
-                return pixelColor;
-                break;
-            }
-            t = t / d2;
-
-            // Compute p
-            return addVector(ray.origin, scaleVector(t, ray.direction));
-        } else {
-            return &NULL;
-        }
+    return (GLboolean) (discriminate > 0);
 }
 
-void castShadowRay(Vector p) {
+Vector calcIntersection(Ray ray, Sphere sphere) {
+    // Compute discriminate
+    // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
+    Vector eMinusC = minusVector(ray.origin, sphere.c);
+    float d2 = dot(ray.direction, ray.direction);
+    float discriminate = dot(ray.direction, eMinusC);
+    discriminate *= discriminate;
+    discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(sphere.r, 2.0)));
+
+    // Calculate p, point of intersection, p = e+td
+    // Solve quadratic for t
+    // t = -d . (e-c) +- discriminate / d.d
+    float t = dot(scaleVector(-1, ray.direction), eMinusC);
+    t += sqrt(discriminate);
+    if (t < 0) {
+        t = t - (2*sqrt(discriminate));
+    }
+    t = t / d2;
+
+    // Compute p
+    return addVector(ray.origin, scaleVector(t, ray.direction));
+}
+
+GLboolean castShadowRay(Vector p, int skip) {
     // Calculate ray from point to light source
+    Ray ray;
+    ray.origin = p;
+    ray.direction = scaleVector(-1,lightDir);
 
     // See if ray hits any objects
+    for (int i=0; i<numSpheres; i++) {
+        if (intersect(ray, spheres[i]) && i != skip) {
+            printf("%i\n", i);
+            return GL_TRUE;
+        }
+    }
 
+    return GL_FALSE;
 }
 
 RGBf castRay(int i, int j) {
@@ -239,11 +253,13 @@ RGBf castRay(int i, int j) {
     //Check for hits with Spheres
     for (int k=0; k<numSpheres; k++) {
         // Check if ray hits sphere and color accordingly
-        Vector p = intersect(ray, spheres[k]);
+        if (intersect(ray, spheres[k])) {                // Hit
+            Vector p = calcIntersection(ray, spheres[k]);
 
-        if (p != NULL) {                // Hit
             // Send out reflection, refraction, and shadow rays
-            castShadowRay(p);
+            if (castShadowRay(p, k)) {
+                return newRGB(0,0,0);
+            }
 
             // Calculate surface normal n = (p-c)/R
             Vector n = scaleVector(1/spheres[k].r, minusVector(p,spheres[k].c));
