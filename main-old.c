@@ -122,17 +122,15 @@ unsigned int numSpheres = 3;
 float pixels[512*512*3];
 Sphere spheres[3];
 Vector e;
-Vector viewDirection;
-Vector up;
-Vector w;
-float d = 1;
 
-Vector n;           // Surface normal
+float d = 10;
 
 float lightI = 1;   // Light Intensity
 Vector lightDir;    // Light direction (unit vector)
 
 Ray ray;
+
+RGBf bgColor;
 
 RGBf specColor; // The color of the specular highlight
 unsigned int specPow = 20;
@@ -150,17 +148,15 @@ Vector v;
 
 
 void init() {
+    bgColor = newRGB(100, 100, 100);
+
     // The viewpoint, e
     e = newVector(5, 0, 0);
 
-    // The view direction (which way we're looking)
-    viewDirection = newVector(-1, 0, 0);
-
-    // Vector representing global up
-    up = newVector(0, 1, 0);
-
     // Calculate basis vectors
-    w = scaleVector(-1/mag(viewDirection), viewDirection);   // The view direction is -w
+    Vector up = newVector(0, 1, 0);                         // Vector representing global up
+    Vector viewDirection = newVector(-1, 0, 0);             // The view direction (which way we're looking)
+    w = scaleVector(-1/mag(viewDirection), viewDirection);  // The view direction is -w
     Vector upCrossW = cross(up, w);
     u = scaleVector(1/mag(upCrossW), upCrossW);
     v = cross(w, u);
@@ -174,23 +170,23 @@ void init() {
     lightDir = scaleVector(1/mag(lightDir),lightDir);
 
     // Initialize specular color
-    specColor = newRGB(150, 150, 150);
+    specColor = newRGB(250, 250, 250);
 
     // Create Spheres
     spheres[0].r = 1;
-    spheres[0].c = newVector(3, 3, 0);
-    spheres[0].color = newRGB(255, 255, 0);
+    spheres[0].c = newVector(0, 1, 1);
+    spheres[0].color = newRGB(255, 0, 0);
 
-    spheres[1].r = 1.5;
-    spheres[1].c = newVector(0, 0, 0);
+    spheres[1].r = 1;
+    spheres[1].c = newVector(0, 1, -1);
     spheres[1].color = newRGB(0, 0, 255);
 
-    spheres[2].r = 100;
-    spheres[2].c = newVector(0, -100, 0);
+    spheres[2].r = 1;
+    spheres[2].c = newVector(0, -0.75, 0);
     spheres[2].color = newRGB(0, 255, 0);
 }
 
-GLboolean intersect(Ray ray, Sphere sphere) {
+float calcIntersection(Ray ray, Sphere sphere) {
     // Compute discriminate
     // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
     Vector eMinusC = minusVector(ray.origin, sphere.c);
@@ -199,99 +195,139 @@ GLboolean intersect(Ray ray, Sphere sphere) {
     discriminate *= discriminate;
     discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(sphere.r, 2.0)));
 
-    return (GLboolean) (discriminate > 0);
-}
+    if (discriminate >= 0) {
+        // Solve quadratic for t
+        // t = -d . (e-c) +- discriminate / d.d
+        float t = dot(scaleVector(-1, ray.direction), eMinusC);
+        float t1 = (t + sqrt(discriminate)) / d2;
+        float t2 = (t - sqrt(discriminate)) / d2;
 
-Vector calcIntersection(Ray ray, Sphere sphere) {
-    // Compute discriminate
-    // (d . (e - c))^2 - (d.d) * ((e-c).(e-c) - r^2)
-    Vector eMinusC = minusVector(ray.origin, sphere.c);
-    float d2 = dot(ray.direction, ray.direction);
-    float discriminate = dot(ray.direction, eMinusC);
-    discriminate *= discriminate;
-    discriminate -= (d2 * (dot(eMinusC, eMinusC) - pow(sphere.r, 2.0)));
-
-    // Calculate p, point of intersection, p = e+td
-    // Solve quadratic for t
-    // t = -d . (e-c) +- discriminate / d.d
-    float t = dot(scaleVector(-1, ray.direction), eMinusC);
-    t += sqrt(discriminate);
-    if (t < 0) {
-        t = t - (2*sqrt(discriminate));
+        if (t1 > 0 && t2 > 0) {
+            if (t1 < t2) {
+                return t1;
+            } else {
+                return t2;
+            }
+        } else if (t1 > 0) {
+            return t1;
+        } else if (t2 > 0) {
+            return t2;
+        } else {
+            return -1;
+        }
+    } else {
+        return -1;
     }
-    t = t / d2;
-
-    // Compute p
-    return addVector(ray.origin, scaleVector(t, ray.direction));
 }
 
-GLboolean castShadowRay(Vector p, int skip) {
+RGBf castShadowRay(Vector p) {
     // Calculate ray from point to light source
     Ray ray;
     ray.origin = p;
-    ray.direction = scaleVector(-1,lightDir);
+    ray.direction = scaleVector(-1, lightDir);
+
+    float t;
 
     // See if ray hits any objects
     for (int i=0; i<numSpheres; i++) {
-        if (intersect(ray, spheres[i]) && i != skip) {
-            return GL_TRUE;
+        if ((t = calcIntersection(ray, spheres[i])) > 0.001) {
+            return newRGB(-50, -50, -50);
         }
     }
 
-    return GL_FALSE;
+    return newRGB(0, 0, 0);
 }
 
-RGBf castRay(int i, int j) {
-    RGBf pixelColor = newRGB(100,100,100);
+RGBf castReflectRay(Vector p, Vector n, Ray ray) {
+    Ray reflectRay;
+    reflectRay.origin = p;
+    reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
+    reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
 
-    // Compute viewing ray
-    float vs = l + (r-l) * (i+0.5) / window_height;      // Vertical displacement
-    float us = b + (t-b) * (j+0.5) / window_width;       // Horizontal displacement
+    for (int i=0; i<numSpheres; i++) {
+        if (calcIntersection(reflectRay, spheres[i]) > 0.001) {
+            return spheres[i].color;
+        }
+    }
 
-    ray.origin = e;
-    ray.direction = addVector(scaleVector(-1*d, w), addVector(scaleVector(us, u), scaleVector(vs, v)));
+    return newRGB(0,0,0);
+}
 
-    //Check for hits with Spheres
-    for (int k=0; k<numSpheres; k++) {
-        // Check if ray hits sphere and color accordingly
-        if (intersect(ray, spheres[k])) {                // Hit
-            Vector p = calcIntersection(ray, spheres[k]);
+Ray computeViewingRay(int i, int j) {
+    Ray viewingRay;
 
-            // Send out reflection, refraction, and shadow rays
-            // if (castShadowRay(p, k)) {
-            //     return newRGB(0,0,0);
-            // }
+    float us = l + (r-l) * (i+0.5) / window_width;
+    float vs = b + (t-b) * (j+0.5) / window_height;
 
-            // Calculate surface normal n = (p-c)/R
-            Vector n = scaleVector(1/spheres[k].r, minusVector(p,spheres[k].c));
+    viewingRay.origin = e;
+    viewingRay.direction = addVector(scaleVector(-1*d, w), addVector(scaleVector(us, u), scaleVector(vs, v)));
 
-            // Calculate pixel color = lightIntensity * surfaceColor * max(0,n.l);
-            float nl = dot(n, lightDir);
-            float max = (nl > 0) ? nl : 0;
-            float scale = lightI * max;
-            
-            pixelColor = scaleRGB(spheres[k].color, scale);
+    return viewingRay;
+}
 
-            // SPECULAR SHADING
-            // h = (v+l) / mag(v+l)
-            Vector viewingRay = scaleVector(1/mag(ray.direction), ray.direction);
+RGBf diffuse(Vector n, RGBf surfaceColor) {
+    // Diffuse coloring
+    // Calculate pixel color = lightIntensity * surfaceColor * max(0,n.l);
+    float nl = dot(n, lightDir);
+    float max = (nl > 0) ? nl : 0;
+    float scale = lightI * max;
+    return scaleRGB(surfaceColor, scale);
+}
 
-            Vector h = addVector(viewingRay, lightDir);
-            h = scaleVector(1/mag(h),h);
+RGBf specular(Ray ray, Vector n) {
+    // h = (v+l) / mag(v+l)
+    Vector viewingRay = scaleVector(1/mag(ray.direction), ray.direction);
+    Vector h = addVector(viewingRay, lightDir);
+    h = scaleVector(1/mag(h),h);
 
-            float nh = dot(n,h);
+    float nh = dot(n,h);
 
-            max = (nh > 0) ? nh : 0;
-            max = pow(max, specPow);
+    float max = (nh > 0) ? nh : 0;
+    max = pow(max, specPow);
 
-            scale = max * lightI;
+    float scale = max * lightI;
 
-            pixelColor = addRGB(pixelColor, scaleRGB(specColor, scale));
+    printf("%f\n", nh);
 
-            // AMBIENT SHADING
-            pixelColor = addRGB(pixelColor, scaleRGB(spheres[k].color, ambientLightI));
+    return scaleRGB(specColor, scale);
+}
 
-            return pixelColor;
+RGBf ambient(float intensity, RGBf color) {
+    return scaleRGB(color, ambientLightI);
+}
+
+RGBf shading(Ray ray, Vector p, Vector n, Sphere sphere) {
+    RGBf pixelColor;
+    pixelColor = diffuse(n, sphere.color);
+    pixelColor = addRGB(pixelColor, specular(ray, n));
+    pixelColor = addRGB(pixelColor, ambient(ambientLightI, sphere.color));
+
+    pixelColor = addRGB(pixelColor, castShadowRay(p));
+
+    pixelColor = addRGB(pixelColor, castReflectRay(p, n, ray));
+
+    return pixelColor;
+}
+
+RGBf castRay(Ray ray) {
+    RGBf pixelColor = bgColor;
+    float t = -1;
+    float lastT = 9999;
+
+    for (int i=0; i<numSpheres; i++) {
+        t = calcIntersection(ray, spheres[i]);
+        if (t > 0 && t < lastT) {
+            // Compute point of intersection
+            Vector p = addVector(ray.origin, scaleVector(t, ray.direction));
+
+            // Compute surface normal, n = (p-c)/R
+            Vector n = scaleVector(1/spheres[i].r, minusVector(p, spheres[i].c));
+
+            //Evaluate shading model
+            pixelColor = shading(ray, p, n, spheres[i]);
+
+            // Update last-t value
+            lastT = t;
         }
     }
 
@@ -303,10 +339,17 @@ void display(void) {
     // Reset drawing window
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Ray-tracing loop
+    // Ray-tracing loop, for each pixel
     for (int i=0; i<window_height; i++) {
         for (int j=0; j<window_width; j++) {
-            setPixelColor(castRay(i,j), &pixels[(i*window_width*3) + (j*3)]);
+            // Compute viewing ray
+            Ray viewingRay = computeViewingRay(i,j);
+
+            // Get color from casting that ray into scene
+            RGBf pixelColor = castRay(viewingRay);
+
+            // Update pixel color to result from ray
+            setPixelColor(pixelColor, &pixels[(j*window_width*3) + (i*3)]);
         }
     }
 
@@ -332,7 +375,7 @@ int main(int argc, char** argv) {
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
     glutInitWindowSize(window_width, window_height);
 
-    (void)glutCreateWindow("CAP 4730 | Final Project | Advanced Ray-Tracer");
+    glutCreateWindow("CAP 4730 | Final Project | Advanced Ray-Tracer");
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutIdleFunc(idle);
