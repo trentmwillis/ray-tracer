@@ -168,7 +168,7 @@ RGBf diffuse(Vector n, RGBf surfaceColor) {
 
 RGBf specular(Ray ray, Vector n) {
     RGBf specColor = newRGB(250, 250, 250);
-    unsigned int specPow = 20;
+    unsigned int specPow = 40;
 
     // h = (v+l) / mag(v+l)
     Vector viewingRay = scaleVector(1/mag(ray.direction), ray.direction);
@@ -197,9 +197,6 @@ RGBf shading(Ray ray, Vector p, Vector n, Sphere sphere) {
     pixelColor = addRGB(pixelColor, castReflectRay(p, n, ray));
     pixelColor = addRGB(pixelColor, castShadowRay(p, sphere.id));
     pixelColor = addRGB(pixelColor, ambient(sphere.color));
-
-
-
     return pixelColor;
 }
 
