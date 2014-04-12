@@ -39,7 +39,7 @@ RGBf bgColor;
 
 
 void init() {
-    bgColor = newRGB(100, 100, 100);
+    bgColor = newRGB(0, 0, 0);
 
     // The viewpoint, e
     e = newVector(5, 0, 0);
@@ -130,21 +130,6 @@ RGBf castShadowRay(Vector p, int sphereId) {
     return newRGB(0, 0, 0);
 }
 
-RGBf castReflectRay(Vector p, Vector n, Ray ray) {
-    Ray reflectRay;
-    reflectRay.origin = p;
-    reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
-    reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
-
-    for (int i=0; i<numSpheres; i++) {
-        if (calcIntersection(reflectRay, spheres[i]) > 0.001) {
-            return scaleRGB(spheres[i].color, 0.5);
-        }
-    }
-
-    return newRGB(0,0,0);
-}
-
 Ray computeViewingRay(int i, int j) {
     Ray viewingRay;
 
@@ -190,17 +175,9 @@ RGBf ambient(RGBf color) {
     return scaleRGB(color, intensity);
 }
 
-RGBf shading(Ray ray, Vector p, Vector n, Sphere sphere) {
-    RGBf pixelColor;
-    pixelColor = diffuse(n, sphere.color);
-    pixelColor = addRGB(pixelColor, specular(ray, n));
-    pixelColor = addRGB(pixelColor, castReflectRay(p, n, ray));
-    pixelColor = addRGB(pixelColor, castShadowRay(p, sphere.id));
-    pixelColor = addRGB(pixelColor, ambient(sphere.color));
-    return pixelColor;
-}
+RGBf shading(Ray ray, Vector p, Vector n, Sphere sphere, int recur);
 
-RGBf castRay(Ray ray) {
+RGBf castRay(Ray ray, int recur) {
     RGBf pixelColor = bgColor;
     float t = -1;
     float lastT = 9999;
@@ -215,13 +192,34 @@ RGBf castRay(Ray ray) {
             Vector n = scaleVector(-1/spheres[i].r, minusVector(p, spheres[i].c));
 
             //Evaluate shading model
-            pixelColor = shading(ray, p, n, spheres[i]);
+            pixelColor = shading(ray, p, n, spheres[i], recur);
 
             // Update last-t value
             lastT = t;
         }
     }
 
+    return pixelColor;
+}
+
+RGBf shading(Ray ray, Vector p, Vector n, Sphere sphere, int recur) {
+    RGBf pixelColor;
+    pixelColor = diffuse(n, sphere.color);
+
+    if (recur > 0) {
+        Ray reflectRay;
+        reflectRay.origin = scaleVector(1.001,p);
+        reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
+        reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
+        pixelColor = addRGB(pixelColor, castRay(reflectRay, recur-1));
+    }
+
+    pixelColor = addRGB(pixelColor, ambient(sphere.color));
+    pixelColor = addRGB(pixelColor, specular(ray, n));
+
+
+
+    pixelColor = addRGB(pixelColor, castShadowRay(p, sphere.id));
     return pixelColor;
 }
 
@@ -237,7 +235,7 @@ void display(void) {
             Ray viewingRay = computeViewingRay(i,j);
 
             // Get color from casting that ray into scene
-            RGBf pixelColor = castRay(viewingRay);
+            RGBf pixelColor = castRay(viewingRay, 1);
 
             // Update pixel color to result from ray
             setPixelColor(pixelColor, &pixels[(j*window_width*3) + (i*3)]);
