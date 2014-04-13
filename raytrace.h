@@ -88,6 +88,13 @@ typedef struct {
 
 
 
+typedef struct {
+    float t;
+    Sphere* sphere;
+} Hit;
+
+
+
 void setPixelColor(RGBf pixelColor, RGBf* pixel) {
     pixel->r = pixelColor.r / 255;
     pixel->g = pixelColor.g / 255;

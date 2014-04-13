@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "raytrace.h"
+#include <time.h>
 
 #if defined(__APPLE_CC__)
     #include <GLUT/glut.h>
@@ -19,7 +20,7 @@ Sphere spheres[4];
 
 // Viewpoint information
 Vector e;
-float d = 10;
+float d = 100;
 
 // Camera basis vectors, must be unit vectors
 Vector w;
@@ -42,7 +43,7 @@ void init() {
     bgColor = newRGB(0, 0, 0);
 
     // The viewpoint, e
-    e = newVector(5, 0, 0);
+    e = newVector(20, 0, 0);
 
     // Calculate basis vectors
     Vector up = newVector(0, 0, 1);
@@ -63,17 +64,17 @@ void init() {
     spheres[0].id = 0;
 
     spheres[1].r = 1;
-    spheres[1].c = newVector(0, 1, -1);
+    spheres[1].c = newVector(0, 1.25, -1.25);
     spheres[1].color = newRGB(0, 0, 255);
     spheres[1].id = 1;
 
     spheres[2].r = 1;
-    spheres[2].c = newVector(0, -0.75, 0);
+    spheres[2].c = newVector(0, -1, 0.25);
     spheres[2].color = newRGB(0, 255, 0);
     spheres[2].id = 2;
 
-    spheres[3].r = 5;
-    spheres[3].c = newVector(0, -5, -5);
+    spheres[3].r = 2;
+    spheres[3].c = newVector(0, -3, -3);
     spheres[3].color = newRGB(255, 255, 0);
     spheres[3].id = 3;
 }
@@ -112,22 +113,20 @@ float calcIntersection(Ray ray, Sphere sphere) {
     }
 }
 
-RGBf castShadowRay(Vector p, int sphereId) {
-    // Calculate ray from point to light source
-    Ray ray;
-    ray.origin = p;
-    ray.direction = scaleVector(-1, lightDir);
+float sceneHit(Ray ray, Hit* hit) {
+    float t = 0;
+    float lastT = 9999;
+    float result = -1;
 
-    float t;
-
-    // See if ray hits any objects
     for (int i=0; i<numSpheres; i++) {
-        if ((t = calcIntersection(ray, spheres[i])) > 0.01 && i != sphereId) {
-            return newRGB(-100, -100, -100);
+        t = calcIntersection(ray, spheres[i]);
+        if (t > 0 && t < lastT) {
+            result = t;
+            hit->sphere = &spheres[i];
         }
     }
 
-    return newRGB(0, 0, 0);
+    hit->t = result;
 }
 
 Ray computeViewingRay(int i, int j) {
@@ -175,67 +174,79 @@ RGBf ambient(RGBf color) {
     return scaleRGB(color, intensity);
 }
 
-RGBf shading(Ray ray, Vector p, Vector n, Sphere sphere, int recur);
-
 RGBf castRay(Ray ray, int recur) {
     RGBf pixelColor = bgColor;
-    float t = -1;
-    float lastT = 9999;
+    Hit hit, hit2;
 
-    for (int i=0; i<numSpheres; i++) {
-        t = calcIntersection(ray, spheres[i]);
-        if (t > 0 && t < lastT) {
-            // Compute point of intersection
-            Vector p = addVector(ray.origin, scaleVector(t, ray.direction));
+    sceneHit(ray,&hit);
 
-            // Compute surface normal, n = (p-c)/R
-            Vector n = scaleVector(-1/spheres[i].r, minusVector(p, spheres[i].c));
+    if (hit.t > 0) {
+        // Compute point of intersection
+        Vector p = scaleVector(1.001,addVector(ray.origin, scaleVector(hit.t, ray.direction)));
 
-            //Evaluate shading model
-            pixelColor = shading(ray, p, n, spheres[i], recur);
+        // Add base ambient color
+        pixelColor = ambient(hit.sphere->color);
 
-            // Update last-t value
-            lastT = t;
+        // Compute surface normal, n = (p-c)/R
+        Vector n = scaleVector(-1/hit.sphere->r, minusVector(p, hit.sphere->c));
+
+        Ray shadowRay;
+        shadowRay.origin = p;
+        shadowRay.direction = scaleVector(-1, lightDir);
+        sceneHit(shadowRay,&hit2);
+        if (hit2.t < 0 || hit2.sphere == hit.sphere) {
+            pixelColor = addRGB(pixelColor,diffuse(n, hit.sphere->color));
+            pixelColor = addRGB(pixelColor, specular(ray, n));
+        }
+
+        if (recur > 0) {
+            Ray reflectRay;
+            reflectRay.origin = p;
+            reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
+            reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
+            pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
         }
     }
 
     return pixelColor;
 }
 
-RGBf shading(Ray ray, Vector p, Vector n, Sphere sphere, int recur) {
-    RGBf pixelColor;
-    pixelColor = diffuse(n, sphere.color);
-
-    if (recur > 0) {
-        Ray reflectRay;
-        reflectRay.origin = scaleVector(1.001,p);
-        reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
-        reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
-        pixelColor = addRGB(pixelColor, castRay(reflectRay, recur-1));
-    }
-
-    pixelColor = addRGB(pixelColor, ambient(sphere.color));
-    pixelColor = addRGB(pixelColor, specular(ray, n));
-
-
-
-    pixelColor = addRGB(pixelColor, castShadowRay(p, sphere.id));
-    return pixelColor;
-}
 
 // Display method generates the image
 void display(void) {
     // Reset drawing window
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    float x,y;
+
+    srand(time(NULL));
+    float r;
+    int samples = 4;
+
     // Ray-tracing loop, for each pixel
     for (int i=0; i<window_height; i++) {
         for (int j=0; j<window_width; j++) {
-            // Compute viewing ray
+            // RGBf pixelColor = newRGB(0,0,0);
+
+
+            // for (int p=0; p<samples; p++) {
+            //     for (int q=0; q<samples; q++) {
+            //         r = (rand() % 100)/100;
+
+            //         x = i + (p+r) / samples;
+            //         y = j + (q+r) / samples;
+            //         // Compute viewing ray
+            //         Ray viewingRay = computeViewingRay(x,y);
+
+            //         pixelColor = addRGB(pixelColor, castRay(viewingRay,3));
+            //     }
+            // }
+            
+            // pixelColor = scaleRGB(pixelColor, 1/pow(samples,2.0));
+
             Ray viewingRay = computeViewingRay(i,j);
 
-            // Get color from casting that ray into scene
-            RGBf pixelColor = castRay(viewingRay, 1);
+            RGBf pixelColor = castRay(viewingRay, 3);
 
             // Update pixel color to result from ray
             setPixelColor(pixelColor, &pixels[(j*window_width*3) + (i*3)]);
