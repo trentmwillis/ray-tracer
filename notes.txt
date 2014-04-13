@@ -1,13 +1,7 @@
-Ray-Tracing Algorithm
 for each pixel
-    project ray
-        if ray doesn't hit object
-            color pixel some default color (let's go with medium gray [RGB: 100, 100, 100])
-        if ray hits object
-            recursively cast reflection ray
-            cast shadow ray
-            if object has transparency
-                cast refraction ray
-            sum up all ray values
-            color pixel
-draw pixel array
+    compute viewing ray
+    pixelcolor = castray
+
+castray(ray)
+    if (hits something in scene, we need t)
+

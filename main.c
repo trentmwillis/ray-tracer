@@ -15,12 +15,12 @@ unsigned int window_width = 512, window_height = 512;
 float pixels[512*512*3];
 
 // Scene information
-unsigned int numSpheres = 4;
-Sphere spheres[4];
+unsigned int numSpheres = 5;
+Sphere spheres[5];
 
 // Viewpoint information
 Vector e;
-float d = 100;
+float d = 10;
 
 // Camera basis vectors, must be unit vectors
 Vector w;
@@ -28,11 +28,11 @@ Vector u;
 Vector v;
 
 // Variable to represent image plane
-float l = -10, r = 10;
-float b = -10, t = 10;
+float l = -4, r = 4;
+float b = -4, t = 4;
 
 // Global light information
-float lightI = 1;
+float lightI = .7;
 Vector lightDir;
 
 // Default background color
@@ -43,7 +43,7 @@ void init() {
     bgColor = newRGB(0, 0, 0);
 
     // The viewpoint, e
-    e = newVector(20, 0, 0);
+    e = newVector(5, 0, 0);
 
     // Calculate basis vectors
     Vector up = newVector(0, 0, 1);
@@ -54,29 +54,39 @@ void init() {
     v = cross(w, u);
 
     // Variables for diffuse shading
-    lightDir = newVector(0, -1, -1);
+    lightDir = newVector(-1,-1,-1);
     lightDir = scaleVector(1/mag(lightDir),lightDir);
 
     // Create spheres in scene
-    spheres[0].r = 1;
-    spheres[0].c = newVector(0, 1, 1);
-    spheres[0].color = newRGB(255, 0, 0);
-    spheres[0].id = 0;
+    spheres[4].r = 1;
+    spheres[4].c = newVector(0, 1, 1);
+    spheres[4].color = newRGB(180,180,180);
+    spheres[4].id = 0;
+    spheres[4].ri = 1;
 
     spheres[1].r = 1;
-    spheres[1].c = newVector(0, 1.25, -1.25);
-    spheres[1].color = newRGB(0, 0, 255);
+    spheres[1].c = newVector(0, -1, -1);
+    spheres[1].color = newRGB(180,180,180);
     spheres[1].id = 1;
+    spheres[1].ri = 1;
 
     spheres[2].r = 1;
-    spheres[2].c = newVector(0, -1, 0.25);
-    spheres[2].color = newRGB(0, 255, 0);
+    spheres[2].c = newVector(0, -1, 1);
+    spheres[2].color = newRGB(180,180,180);
     spheres[2].id = 2;
+    spheres[2].ri = 2.4;
 
-    spheres[3].r = 2;
-    spheres[3].c = newVector(0, -3, -3);
-    spheres[3].color = newRGB(255, 255, 0);
+    spheres[3].r = 1;
+    spheres[3].c = newVector(0, 1, -1);
+    spheres[3].color = newRGB(180,180,180);
     spheres[3].id = 3;
+    spheres[3].ri = 1;
+
+    spheres[0].r = 1;
+    spheres[0].c = newVector(-5, 0, 0);
+    spheres[0].color = newRGB(180,180,180);
+    spheres[0].id = 3;
+    spheres[0].ri = 1;
 }
 
 float calcIntersection(Ray ray, Sphere sphere) {
@@ -174,15 +184,34 @@ RGBf ambient(RGBf color) {
     return scaleRGB(color, intensity);
 }
 
+// P. 305
+GLboolean refract(Vector d, Vector n, float ri, Vector* t) {
+    Vector t1 = scaleVector(dot(d,n),n);
+    t1 = minusVector(d,t1);
+    t1 = scaleVector(1/ri,t1);
+
+    float root = 1-(1-pow(dot(d,n),2.0))/pow(ri,2.0);
+    if (root < 0) {
+        return GL_FALSE;
+    }
+
+    root = sqrt(root);
+    Vector t2 = scaleVector(root, t2);
+
+    *t = minusVector(t1,t2);
+
+    return GL_TRUE;
+}
+
 RGBf castRay(Ray ray, int recur) {
     RGBf pixelColor = bgColor;
     Hit hit, hit2;
 
     sceneHit(ray,&hit);
 
-    if (hit.t > 0) {
+    if (hit.t > 0.001) {
         // Compute point of intersection
-        Vector p = scaleVector(1.001,addVector(ray.origin, scaleVector(hit.t, ray.direction)));
+        Vector p = addVector(ray.origin, scaleVector(hit.t-0.0001, ray.direction));
 
         // Add base ambient color
         pixelColor = ambient(hit.sphere->color);
@@ -194,7 +223,7 @@ RGBf castRay(Ray ray, int recur) {
         shadowRay.origin = p;
         shadowRay.direction = scaleVector(-1, lightDir);
         sceneHit(shadowRay,&hit2);
-        if (hit2.t < 0 || hit2.sphere == hit.sphere) {
+        if (hit2.t < 0) {
             pixelColor = addRGB(pixelColor,diffuse(n, hit.sphere->color));
             pixelColor = addRGB(pixelColor, specular(ray, n));
         }
@@ -204,7 +233,31 @@ RGBf castRay(Ray ray, int recur) {
             reflectRay.origin = p;
             reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
             reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
-            pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
+            // pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
+
+            if (hit.sphere->ri != 1) {
+                float kr, kg, kb, c;
+                Vector t;
+                if (dot(ray.direction,n) < 0) {
+                    refract(ray.direction,n,hit.sphere->ri,&t);
+                    c = dot(scaleVector(-1,ray.direction),n);
+                    kr = kg = kb = 1;
+                } else {
+                    if (refract(ray.direction,scaleVector(-1,n),1/hit.sphere->ri,&t)) {
+                        c = dot(t,n);
+                    } else {
+                        return addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
+                    }
+                }
+
+                float n = hit.sphere->ri;
+                float r0 = pow((n-1),2.0) / pow((n+1),2.0);
+                float r1 = r0 + (1-r0) * pow(1-c, 5.0);
+
+                pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), r));
+                reflectRay.direction = t;
+                pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 1-r));
+            }
         }
     }
 

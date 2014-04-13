@@ -77,6 +77,7 @@ typedef struct {
     Vector c;
     RGBf color;
     int id;
+    float ri;
 } Sphere;
 
 
