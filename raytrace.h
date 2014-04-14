@@ -78,6 +78,7 @@ typedef struct {
     RGBf color;
     int id;
     float ri;
+    int reflective;
 } Sphere;
 
 
@@ -90,8 +91,10 @@ typedef struct {
 
 
 typedef struct {
-    float t;
     Sphere* sphere;
+    Vector n;
+    Vector p;
+    float t;
 } Hit;
 
 
@@ -101,3 +104,5 @@ void setPixelColor(RGBf pixelColor, RGBf* pixel) {
     pixel->g = pixelColor.g / 255;
     pixel->b = pixelColor.b / 255;
 }
+
+RGBf shade(Hit hit, Ray ray, int recur);

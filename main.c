@@ -34,12 +34,15 @@ float b = -4, t = 4;
 
 // Global light information
 float lightI = .7;
-Vector lightDir;
+Vector light[1];
+int numLights = 1;
 
 // Default background color
 RGBf bgColor;
 
 GLboolean antialias = GL_FALSE;
+GLboolean reflection = GL_FALSE;
+GLboolean transparency = GL_FALSE;
 GLboolean softShadows = GL_TRUE;
 
 
@@ -58,39 +61,44 @@ void init() {
     v = cross(w, u);
 
     // Variables for diffuse shading
-    lightDir = newVector(0,-1,-1);
-    lightDir = scaleVector(1/mag(lightDir),lightDir);
+    light[0] = newVector(0,-1,-1);
+    light[0] = scaleVector(1/mag(light[0]),light[0]);
 
     // Create spheres in scene
     spheres[4].r = 1;
-    spheres[4].c = newVector(-0.5, 1, 1);
-    spheres[4].color = newRGB(180,180,180);
+    spheres[4].c = newVector(-0, 1, 1);
+    spheres[4].color = newRGB(255,0,0);
     spheres[4].id = 0;
     spheres[4].ri = 1;
+    spheres[4].reflective = 1;
 
     spheres[1].r = 1;
     spheres[1].c = newVector(0, -1, -1);
-    spheres[1].color = newRGB(180,180,180);
+    spheres[1].color = newRGB(0,0,255);
     spheres[1].id = 1;
     spheres[1].ri = 1;
+    spheres[1].reflective = 1;
 
     spheres[2].r = 1;
     spheres[2].c = newVector(0, -1, 1);
-    spheres[2].color = newRGB(180,180,180);
+    spheres[2].color = newRGB(0,255,0);
     spheres[2].id = 2;
     spheres[2].ri = 2.4;
+    spheres[2].reflective = 0;
 
     spheres[3].r = 1;
     spheres[3].c = newVector(0, 1, -1);
     spheres[3].color = newRGB(180,180,180);
     spheres[3].id = 3;
     spheres[3].ri = 1;
+    spheres[3].reflective = 1;
 
     spheres[0].r = 1;
-    spheres[0].c = newVector(-5, 0, 0);
+    spheres[0].c = newVector(-2, -1, 1);
     spheres[0].color = newRGB(180,180,180);
     spheres[0].id = 3;
     spheres[0].ri = 1;
+    spheres[0].reflective = 1;
 }
 
 float calcIntersection(Ray ray, Sphere sphere) {
@@ -127,6 +135,15 @@ float calcIntersection(Ray ray, Sphere sphere) {
     }
 }
 
+GLboolean inShadow(Ray ray) {
+    for (int i=0; i<numSpheres; i++) {
+        if (calcIntersection(ray,spheres[i]) > 0) {
+            return GL_TRUE;
+        }
+    }
+    return GL_FALSE;
+}
+
 float sceneHit(Ray ray, Hit* hit) {
     float t = 0;
     float lastT = 9999;
@@ -156,9 +173,7 @@ Ray computeViewingRay(float i, float j) {
 }
 
 RGBf diffuse(Vector n, RGBf surfaceColor) {
-    // Diffuse coloring
-    // Calculate pixel color = lightIntensity * surfaceColor * max(0,n.l);
-    float nl = dot(n, lightDir);
+    float nl = dot(n, light[0]);
     float max = (nl > 0) ? nl : 0;
     float scale = lightI * max;
     return scaleRGB(surfaceColor, scale);
@@ -168,9 +183,8 @@ RGBf specular(Ray ray, Vector n) {
     RGBf specColor = newRGB(250, 250, 250);
     unsigned int specPow = 40;
 
-    // h = (v+l) / mag(v+l)
     Vector viewingRay = scaleVector(1/mag(ray.direction), ray.direction);
-    Vector h = addVector(viewingRay, lightDir);
+    Vector h = addVector(viewingRay, light[0]);
     h = scaleVector(1/mag(h),h);
 
     float nh = dot(n,h);
@@ -188,87 +202,101 @@ RGBf ambient(RGBf color) {
     return scaleRGB(color, intensity);
 }
 
-// P. 305
-GLboolean refract(Vector d, Vector n, float ri, Vector* t) {
-    Vector t1 = scaleVector(dot(d,n),n);
-    t1 = minusVector(d,t1);
-    t1 = scaleVector(1/ri,t1);
-
-    float root = 1-(1-pow(dot(d,n),2.0))/pow(ri,2.0);
-    if (root < 0) {
-        return GL_FALSE;
-    }
-
-    root = sqrt(root);
-    Vector t2 = scaleVector(root, t2);
-
-    *t = minusVector(t1,t2);
-
-    return GL_TRUE;
-}
-
-RGBf shade(Vector p, Hit hit, Ray ray, int recur);
-
 RGBf castRay(Ray ray, int recur) {
     Hit hit;
-
     sceneHit(ray,&hit);
 
     if (hit.t > 0.001) {
-        // Compute point of intersection
-        Vector p = addVector(ray.origin, scaleVector(hit.t-0.0001, ray.direction));
-
-        return shade(p,hit, ray, recur);
+        hit.p = addVector(ray.origin, scaleVector(hit.t-0.0001, ray.direction));
+        hit.n = scaleVector(-1/hit.sphere->r, minusVector(hit.p, hit.sphere->c));
+        return shade(hit, ray, recur);
     }
 
     return bgColor;
 }
 
-RGBf shade(Vector p, Hit hit, Ray ray, int recur) {
-    RGBf pixelColor = newRGB(0,0,0);
-    Hit hit2;
-
-    // Add base ambient color
-    pixelColor = ambient(hit.sphere->color);
-
-    // Compute surface normal, n = (p-c)/R
-    Vector n = scaleVector(-1/hit.sphere->r, minusVector(p, hit.sphere->c));
-
+Ray calcShadowRay(Vector p, Vector lightSource) {
     Ray shadowRay;
     shadowRay.origin = p;
-    float samples = 1;
+    shadowRay.direction = scaleVector(-1, lightSource);
+    return shadowRay;
+}
 
-    for (int i=0; i<samples; i++) {
-        for (int j=0; j<samples; j++) {
-            shadowRay.direction = scaleVector(-1, lightDir);
-            float r = (rand() % 100)/100.0f;
-            // shadowRay.direction.x += (i+r)/samples;
-            // shadowRay.direction.y += (j+r)/samples;
+Vector reflect(Vector direction, Vector normal) {
+    Vector reflection = scaleVector(1/mag(direction), direction);
+    return minusVector(reflection, scaleVector(2 * dot(reflection, normal), normal));
+}
 
-            sceneHit(shadowRay,&hit2);
-            if (hit2.t < 0) {
-                pixelColor = addRGB(pixelColor,diffuse(n, hit.sphere->color));
-                pixelColor = addRGB(pixelColor, specular(ray, n));
-            }
+GLboolean refract(Vector d, Vector n, float ri, Vector *t) {
+    Vector t1 = scaleVector(1/ri, minusVector(d, scaleVector(dot(d, n), n)));
+    float root = 1 - (1 - pow(dot(d, n), 2.0)) / pow(ri, 2.0);
+    
+    if (root < 0) {
+        return GL_FALSE;
+    }
 
-            if (recur > 0) {
-                Ray reflectRay;
-                reflectRay.origin = p;
-                reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
-                reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
-                pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
+    Vector t2 = scaleVector(sqrt(root), n);
+    *t = minusVector(t1, t2);
+
+    return GL_TRUE;
+}
+
+RGBf shade(Hit hit, Ray ray, int recur) {
+    RGBf pixelColor = newRGB(0,0,0);
+
+    pixelColor = ambient(hit.sphere->color);
+
+    for (int i=0; i<numLights; i++) {
+        Ray shadowRay = calcShadowRay(hit.p,light[0]);
+        if (!inShadow(shadowRay)) {
+            pixelColor = addRGB(pixelColor, diffuse(hit.n, hit.sphere->color));
+            pixelColor = addRGB(pixelColor, specular(ray, hit.n));
+        }
+    }
+
+    if (reflection && hit.sphere->reflective && recur > 0) {
+        Ray reflectRay;
+        reflectRay.origin = hit.p;
+        reflectRay.direction = reflect(ray.direction, hit.n);
+        pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
+    }
+
+    if (transparency && hit.sphere->ri != 1 && recur > 0) {
+        Vector r = reflect(ray.direction, hit.n);
+        Ray ray, ray2;
+        Vector t;
+        float c;
+        float kr, kg, kb;
+        if (dot(ray.direction,hit.n) < 0) {
+            refract(ray.direction, hit.n, hit.sphere->ri, &t);
+            c = dot(scaleVector(-1,ray.direction),hit.n);
+            kr = kg = kb = 1;
+        } else {
+            kr = 1;
+            kg = 1;
+            kb = 1;
+            if (refract(ray.direction, scaleVector(-1,hit.n), 1/hit.sphere->ri, &t)) {
+                c = dot(t,hit.n);
+            } else {
+                ray.origin = hit.p;
+                ray.direction = r;
+                return castRay(ray, recur-1);
             }
         }
+
+        float r0 = pow(hit.sphere->ri-1, 2.0) / pow(hit.sphere->ri+1, 2.0);
+        float r1 = r0 +(1-r0) * pow(1-c, 5.0);
+
+        ray.origin = hit.p;
+        ray.direction = r;
+        ray2.origin = hit.p;
+        ray2.direction = t;
+        return addRGB(scaleRGB(castRay(ray,recur-1),r1), scaleRGB(castRay(ray2,recur-1), (1-r1)));
     }
 
     return pixelColor;
 }
 
-
-
-void toggleAntialias() {
-    antialias = !antialias;
-}
 
 
 RGBf antialiasPixel(int i, int j) {
@@ -332,6 +360,10 @@ void idle(void) {
     glutPostRedisplay();
 }
 
+void toggle(GLboolean* toggle) {
+    *toggle = !(*toggle);
+}
+
 void keyboard(unsigned char key, int x, int y) {    
     switch (key) {
         case 'h':
@@ -339,7 +371,13 @@ void keyboard(unsigned char key, int x, int y) {
             printf("----\n");
             break;
         case 'a':
-            toggleAntialias();
+            toggle(&antialias);
+            break;
+        case 'r':
+            toggle(&reflection);
+            break;
+        case 't':
+            toggle(&transparency);
             break;
     }
     
