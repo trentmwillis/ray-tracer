@@ -1,8 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
-#include "raytrace.h"
 #include <time.h>
+
+#include "raytrace.h"
 
 #if defined(__APPLE_CC__)
     #include <GLUT/glut.h>
@@ -37,6 +38,9 @@ Vector lightDir;
 
 // Default background color
 RGBf bgColor;
+
+GLboolean antialias = GL_FALSE;
+GLboolean softShadows = GL_TRUE;
 
 
 void init() {
@@ -139,7 +143,7 @@ float sceneHit(Ray ray, Hit* hit) {
     hit->t = result;
 }
 
-Ray computeViewingRay(int i, int j) {
+Ray computeViewingRay(float i, float j) {
     Ray viewingRay;
 
     float us = l + (r-l) * (i+0.5) / window_width;
@@ -233,73 +237,110 @@ RGBf castRay(Ray ray, int recur) {
             reflectRay.origin = p;
             reflectRay.direction = scaleVector(1/mag(ray.direction), ray.direction);
             reflectRay.direction = minusVector(reflectRay.direction, scaleVector(2 * dot(reflectRay.direction,n), n));
-            // pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
+            pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
 
-            if (hit.sphere->ri != 1) {
-                float kr, kg, kb, c;
-                Vector t;
-                if (dot(ray.direction,n) < 0) {
-                    refract(ray.direction,n,hit.sphere->ri,&t);
-                    c = dot(scaleVector(-1,ray.direction),n);
-                    kr = kg = kb = 1;
-                } else {
-                    if (refract(ray.direction,scaleVector(-1,n),1/hit.sphere->ri,&t)) {
-                        c = dot(t,n);
-                    } else {
-                        return addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
-                    }
-                }
+            // if (hit.sphere->ri != 1) {
+            //     float kr, kg, kb, c;
+            //     Vector t;
+            //     if (dot(ray.direction,n) < 0) {
+            //         refract(ray.direction,n,hit.sphere->ri,&t);
+            //         c = dot(scaleVector(-1,ray.direction),n);
+            //         kr = kg = kb = 1;
+            //     } else {
+            //         if (refract(ray.direction,scaleVector(-1,n),1/hit.sphere->ri,&t)) {
+            //             c = dot(t,n);
+            //         } else {
+            //             return addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 0.25));
+            //         }
+            //     }
 
-                float n = hit.sphere->ri;
-                float r0 = pow((n-1),2.0) / pow((n+1),2.0);
-                float r1 = r0 + (1-r0) * pow(1-c, 5.0);
+            //     float n = hit.sphere->ri;
+            //     float r0 = pow((n-1),2.0) / pow((n+1),2.0);
+            //     float r1 = r0 + (1-r0) * pow(1-c, 5.0);
 
-                pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), r));
-                reflectRay.direction = t;
-                pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 1-r));
-            }
+            //     pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), r));
+            //     reflectRay.direction = t;
+            //     pixelColor = addRGB(pixelColor, scaleRGB(castRay(reflectRay, recur-1), 1-r));
+            // }
         }
     }
 
     return pixelColor;
 }
 
+void toggleAntialias() {
+    antialias = !antialias;
+}
+
+
+RGBf antialiasPixel(int i, int j) {
+    float samples = 3;
+    RGBf pixelColor = newRGB(0,0,0);
+    float x,y;
+    float r;
+
+    for (int p=0; p<samples; p++) {
+        for (int q=0; q<samples; q++) {
+            r = (rand() % 100)/100.0f;
+
+            x = (float)i + ((float)p+r) / samples;
+            y = (float)j + ((float)q+r) / samples;
+
+            // Compute viewing ray
+            Ray viewingRay = computeViewingRay(x,y);
+
+            pixelColor = addRGB(pixelColor, castRay(viewingRay,3));
+        }
+    }
+    
+    return scaleRGB(pixelColor, 1/pow(samples,2.0));
+}
+
+// RGBf softShadowPixel(int i, int j) {
+//     RGBf pixelColor = newRGB(0,0,0);
+//     int n = 3;
+//     int bigN = n*n;
+//     float r[bigN][2];
+//     for (int i=0; i<bigN; i++) {
+//         r[i][0] = (rand() % 100)/100.0f;
+//         r[i][1] = (rand() % 100)/100.0f;
+//     }
+//     float s[bigN][2];
+//     for (int i=0; i<bigN; i++) {
+//         s[i][0] = (rand() % 100)/100.0f;
+//         s[i][1] = (rand() % 100)/100.0f;
+//     }
+//     for (int i=bigN-1; i>0; i--) {
+//         int j = (rand() % i);
+//         float temp[2];
+//         temp = s[i];
+//         s[i] = s[j];
+//         s[j] = temp;
+//     }
+//     for (int i=0; i<bigN; i++) {
+        
+//     }
+// }
 
 // Display method generates the image
 void display(void) {
     // Reset drawing window
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    float x,y;
-
     srand(time(NULL));
-    float r;
-    int samples = 4;
 
     // Ray-tracing loop, for each pixel
     for (int i=0; i<window_height; i++) {
         for (int j=0; j<window_width; j++) {
-            // RGBf pixelColor = newRGB(0,0,0);
+            RGBf pixelColor;
 
-
-            // for (int p=0; p<samples; p++) {
-            //     for (int q=0; q<samples; q++) {
-            //         r = (rand() % 100)/100;
-
-            //         x = i + (p+r) / samples;
-            //         y = j + (q+r) / samples;
-            //         // Compute viewing ray
-            //         Ray viewingRay = computeViewingRay(x,y);
-
-            //         pixelColor = addRGB(pixelColor, castRay(viewingRay,3));
-            //     }
-            // }
-            
-            // pixelColor = scaleRGB(pixelColor, 1/pow(samples,2.0));
-
-            Ray viewingRay = computeViewingRay(i,j);
-
-            RGBf pixelColor = castRay(viewingRay, 3);
+            if (antialias) {
+                pixelColor = antialiasPixel(i,j);
+            // } else if (softShadows) {
+            //     pixelColor = softShadowPixel(i,j);
+            } else {
+                pixelColor = castRay(computeViewingRay(i,j), 3);
+            }
 
             // Update pixel color to result from ray
             setPixelColor(pixelColor, &pixels[(j*window_width*3) + (i*3)]);
@@ -321,6 +362,20 @@ void idle(void) {
     glutPostRedisplay();
 }
 
+void keyboard(unsigned char key, int x, int y) {    
+    switch (key) {
+        case 'h':
+            printf("HELP\n");
+            printf("----\n");
+            break;
+        case 'a':
+            toggleAntialias();
+            break;
+    }
+    
+    glutPostRedisplay();
+}
+
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     init();
@@ -330,6 +385,7 @@ int main(int argc, char** argv) {
 
     glutCreateWindow("CAP 4730 | Final Project | Advanced Ray-Tracer");
     glutDisplayFunc(display);
+    glutKeyboardFunc(keyboard);
     glutReshapeFunc(reshape);
     glutIdleFunc(idle);
 
