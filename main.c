@@ -34,8 +34,8 @@ float b = -4, t = 4;
 
 // Global light information
 float lightI = .7;
-Vector light[1];
-int numLights = 1;
+Vector light[2];
+int numLights = 2;
 
 // Default background color
 RGBf bgColor;
@@ -63,6 +63,9 @@ void init() {
     // Variables for diffuse shading
     light[0] = newVector(0,-1,-1);
     light[0] = scaleVector(1/mag(light[0]),light[0]);
+
+    light[1] = newVector(0,-1,1);
+    light[1] = scaleVector(1/mag(light[1]),light[1]);
 
     // Create spheres in scene
     spheres[4].r = 1;
@@ -94,8 +97,8 @@ void init() {
     spheres[3].reflective = 1;
 
     spheres[0].r = 1;
-    spheres[0].c = newVector(-2, -2, 1);
-    spheres[0].color = newRGB(180,180,180);
+    spheres[0].c = newVector(-2, -1, 1);
+    spheres[0].color = newRGB(255,255,0);
     spheres[0].id = 3;
     spheres[0].ri = 1;
     spheres[0].reflective = 1;
@@ -168,23 +171,25 @@ Ray computeViewingRay(float i, float j) {
 
     viewingRay.origin = e;
     viewingRay.direction = addVector(scaleVector(-1*d, w), addVector(scaleVector(us, u), scaleVector(vs, v)));
+    viewingRay.direction = scaleVector(1/mag(viewingRay.direction), viewingRay.direction);
 
     return viewingRay;
 }
 
-RGBf diffuse(Vector n, RGBf surfaceColor) {
-    float nl = dot(n, light[0]);
+RGBf diffuse(Vector n, RGBf surfaceColor, int lightNum) {
+    float nl = dot(n, light[lightNum]);
     float max = (nl > 0) ? nl : 0;
     float scale = lightI * max;
+
     return scaleRGB(surfaceColor, scale);
 }
 
-RGBf specular(Ray ray, Vector n) {
+RGBf specular(Ray ray, Vector n, int lightNum) {
     RGBf specColor = newRGB(250, 250, 250);
     unsigned int specPow = 40;
 
     Vector viewingRay = scaleVector(1/mag(ray.direction), ray.direction);
-    Vector h = addVector(viewingRay, light[0]);
+    Vector h = addVector(viewingRay, light[lightNum]);
     h = scaleVector(1/mag(h),h);
 
     float nh = dot(n,h);
@@ -204,7 +209,7 @@ RGBf ambient(RGBf color) {
 
 RGBf castRay(Ray ray, int recur) {
     Hit hit;
-    sceneHit(ray,&hit);
+    sceneHit(ray, &hit);
 
     if (hit.t > 0.001) {
         hit.p = addVector(ray.origin, scaleVector(hit.t-0.0001, ray.direction));
@@ -228,9 +233,9 @@ Vector reflect(Vector direction, Vector normal) {
     return minusVector(reflection, scaleVector(2 * dot(reflection, normal), normal));
 }
 
-GLboolean refract(Vector d, Vector n, float ri, Vector *t) {
-    Vector t1 = scaleVector(1/ri, minusVector(d, scaleVector(dot(d, n), n)));
-    float root = 1 - (1 - pow(dot(d, n), 2.0)) / pow(ri, 2.0);
+GLboolean refract(Vector d, Vector n, float nt, Vector *t) {
+    Vector t1 = scaleVector(1/nt, minusVector(d, scaleVector(dot(d, n), n)));
+    float root = 1 - (1 - pow(dot(d, n), 2.0)) / pow(nt, 2.0);
     
     if (root < 0) {
         return GL_FALSE;
@@ -243,16 +248,24 @@ GLboolean refract(Vector d, Vector n, float ri, Vector *t) {
     return GL_TRUE;
 }
 
+RGBf attenuate(float kr, float kg, float kb, RGBf color) {
+    RGBf result;
+    result.r = color.r * kr;
+    result.g = color.g * kg;
+    result.b = color.b * kb;
+    return result;
+}
+
 RGBf shade(Hit hit, Ray ray, int recur) {
     RGBf pixelColor = newRGB(0,0,0);
 
     pixelColor = ambient(hit.sphere->color);
 
     for (int i=0; i<numLights; i++) {
-        Ray shadowRay = calcShadowRay(hit.p,light[0]);
+        Ray shadowRay = calcShadowRay(hit.p,light[i]);
         if (!inShadow(shadowRay)) {
-            pixelColor = addRGB(pixelColor, diffuse(hit.n, hit.sphere->color));
-            pixelColor = addRGB(pixelColor, specular(ray, hit.n));
+            pixelColor = addRGB(pixelColor, diffuse(hit.n, hit.sphere->color, i));
+            pixelColor = addRGB(pixelColor, specular(ray, hit.n, i));
         }
     }
 
@@ -264,28 +277,23 @@ RGBf shade(Hit hit, Ray ray, int recur) {
     }
 
     if (transparency && hit.sphere->ri != 1 && recur > 0) {
-        ray.direction = scaleVector(1/mag(ray.direction), ray.direction);
         Vector r = reflect(ray.direction, hit.n);
-        RGBf k;
+        float kr, kg, kb;
         Ray ray1, ray2;
         Vector t;
         float c;
 
 
-        if (dot(ray.direction,hit.n) < 0) {
+        if (dot(ray.direction, hit.n) < 0) {
             refract(ray.direction, hit.n, hit.sphere->ri, &t);
-            c = dot(scaleVector(-1,ray.direction),hit.n);
-            k.r = k.g = k.b = 1;
+            c = dot(scaleVector(-1, ray.direction), hit.n);
         } else {
-            k.r = 1;
-            k.g = 1;
-            k.b = 1;
             if (refract(ray.direction, scaleVector(-1,hit.n), 1/hit.sphere->ri, &t)) {
-                c = dot(t,hit.n);
+                c = dot(t, hit.n);
             } else {
                 ray1.origin = hit.p;
                 ray1.direction = r;
-                return castRay(ray1, recur-1);
+                return addRGB(pixelColor, castRay(ray1, recur-1));
             }
         }
 
@@ -294,15 +302,15 @@ RGBf shade(Hit hit, Ray ray, int recur) {
 
         ray1.origin = hit.p;
         ray1.direction = r;
+
         ray2.origin = hit.p;
         ray2.direction = t;
-        return addRGB(scaleRGB(castRay(ray1, recur-1), r1), scaleRGB(castRay(ray2, recur-1), (1-r1)));
+
+        return addRGB(pixelColor,addRGB(scaleRGB(castRay(ray1, recur-1), r1), scaleRGB(castRay(ray2, recur-1), (1-r1))));
     }
 
     return pixelColor;
 }
-
-
 
 RGBf antialiasPixel(int i, int j) {
     float samples = 3;
@@ -342,7 +350,7 @@ void display(void) {
             if (antialias) {
                 pixelColor = antialiasPixel(i,j);
             } else {
-                pixelColor = castRay(computeViewingRay(i,j), 3);
+                pixelColor = castRay(computeViewingRay(i,j), 5);
             }
 
             // Update pixel color to result from ray
