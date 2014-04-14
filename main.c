@@ -83,7 +83,7 @@ void init() {
     spheres[2].c = newVector(0, -1, 1);
     spheres[2].color = newRGB(0,255,0);
     spheres[2].id = 2;
-    spheres[2].ri = 2.4;
+    spheres[2].ri = 1.2;
     spheres[2].reflective = 0;
 
     spheres[3].r = 1;
@@ -94,7 +94,7 @@ void init() {
     spheres[3].reflective = 1;
 
     spheres[0].r = 1;
-    spheres[0].c = newVector(-2, -1, 1);
+    spheres[0].c = newVector(-2, -2, 1);
     spheres[0].color = newRGB(180,180,180);
     spheres[0].id = 3;
     spheres[0].ri = 1;
@@ -209,6 +209,7 @@ RGBf castRay(Ray ray, int recur) {
     if (hit.t > 0.001) {
         hit.p = addVector(ray.origin, scaleVector(hit.t-0.0001, ray.direction));
         hit.n = scaleVector(-1/hit.sphere->r, minusVector(hit.p, hit.sphere->c));
+        hit.n = scaleVector(1/mag(hit.n), hit.n);
         return shade(hit, ray, recur);
     }
 
@@ -237,6 +238,7 @@ GLboolean refract(Vector d, Vector n, float ri, Vector *t) {
 
     Vector t2 = scaleVector(sqrt(root), n);
     *t = minusVector(t1, t2);
+    *t = scaleVector(1/mag(*t),*t);
 
     return GL_TRUE;
 }
@@ -262,36 +264,39 @@ RGBf shade(Hit hit, Ray ray, int recur) {
     }
 
     if (transparency && hit.sphere->ri != 1 && recur > 0) {
+        ray.direction = scaleVector(1/mag(ray.direction), ray.direction);
         Vector r = reflect(ray.direction, hit.n);
-        Ray ray, ray2;
+        RGBf k;
+        Ray ray1, ray2;
         Vector t;
         float c;
-        float kr, kg, kb;
+
+
         if (dot(ray.direction,hit.n) < 0) {
             refract(ray.direction, hit.n, hit.sphere->ri, &t);
             c = dot(scaleVector(-1,ray.direction),hit.n);
-            kr = kg = kb = 1;
+            k.r = k.g = k.b = 1;
         } else {
-            kr = 1;
-            kg = 1;
-            kb = 1;
+            k.r = 1;
+            k.g = 1;
+            k.b = 1;
             if (refract(ray.direction, scaleVector(-1,hit.n), 1/hit.sphere->ri, &t)) {
                 c = dot(t,hit.n);
             } else {
-                ray.origin = hit.p;
-                ray.direction = r;
-                return castRay(ray, recur-1);
+                ray1.origin = hit.p;
+                ray1.direction = r;
+                return castRay(ray1, recur-1);
             }
         }
 
         float r0 = pow(hit.sphere->ri-1, 2.0) / pow(hit.sphere->ri+1, 2.0);
-        float r1 = r0 +(1-r0) * pow(1-c, 5.0);
+        float r1 = r0 + (1-r0) * pow(1-c, 5.0);
 
-        ray.origin = hit.p;
-        ray.direction = r;
+        ray1.origin = hit.p;
+        ray1.direction = r;
         ray2.origin = hit.p;
         ray2.direction = t;
-        return addRGB(scaleRGB(castRay(ray,recur-1),r1), scaleRGB(castRay(ray2,recur-1), (1-r1)));
+        return addRGB(scaleRGB(castRay(ray1, recur-1), r1), scaleRGB(castRay(ray2, recur-1), (1-r1)));
     }
 
     return pixelColor;
