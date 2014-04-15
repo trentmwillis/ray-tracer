@@ -76,7 +76,7 @@ void init() {
     spheres[4].reflective = 1;
 
     spheres[1].r = 1;
-    spheres[1].c = newVector(0, -1, -1);
+    spheres[1].c = newVector(2, -1, -1);
     spheres[1].color = newRGB(0,0,255);
     spheres[1].id = 1;
     spheres[1].ri = 1;
@@ -90,7 +90,7 @@ void init() {
     spheres[2].reflective = 0;
 
     spheres[3].r = 1;
-    spheres[3].c = newVector(0, 1, -1);
+    spheres[3].c = newVector(1, 1, -1);
     spheres[3].color = newRGB(180,180,180);
     spheres[3].id = 3;
     spheres[3].ri = 1;
@@ -163,7 +163,20 @@ float sceneHit(Ray ray, Hit* hit) {
     hit->t = result;
 }
 
-Ray computeViewingRay(float i, float j) {
+Ray computeViewingRay(float i, float j, Vector origin) {
+    Ray viewingRay;
+
+    float us = l + (r-l) * (i+0.5) / window_width;
+    float vs = b + (t-b) * (j+0.5) / window_height;
+
+    viewingRay.origin = origin;
+    viewingRay.direction = minusVector(addVector(scaleVector(us,u),scaleVector(vs,v)), viewingRay.origin);
+    viewingRay.direction = scaleVector(1/mag(viewingRay.direction), viewingRay.direction);
+
+    return viewingRay;
+}
+
+Ray computeViewingNormalRay(float i, float j) {
     Ray viewingRay;
 
     float us = l + (r-l) * (i+0.5) / window_width;
@@ -313,7 +326,7 @@ RGBf shade(Hit hit, Ray ray, int recur) {
 }
 
 RGBf antialiasPixel(int i, int j) {
-    float samples = 3;
+    float samples = 5;
     RGBf pixelColor = newRGB(0,0,0);
     float x,y;
     float r;
@@ -325,8 +338,13 @@ RGBf antialiasPixel(int i, int j) {
             x = (float)i + ((float)p+r) / samples;
             y = (float)j + ((float)q+r) / samples;
 
+            Vector origin;
+            origin.x = e.x;
+            origin.y = e.y + ((float)q+r) / samples;
+            origin.z = e.z + ((float)p+r) / samples;
+
             // Compute viewing ray
-            Ray viewingRay = computeViewingRay(x,y);
+            Ray viewingRay = computeViewingRay(x,y,origin);
 
             pixelColor = addRGB(pixelColor, castRay(viewingRay,3));
         }
@@ -350,7 +368,7 @@ void display(void) {
             if (antialias) {
                 pixelColor = antialiasPixel(i,j);
             } else {
-                pixelColor = castRay(computeViewingRay(i,j), 5);
+                pixelColor = castRay(computeViewingRay(i,j,e), 5);
             }
 
             // Update pixel color to result from ray
