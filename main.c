@@ -33,23 +33,25 @@ float l = -4, r = 4;
 float b = -4, t = 4;
 
 // Global light information
+Vector light[3];
 float lightI = .7;
-Vector light[2];
-int numLights = 2;
+int numLights = 1;
 
 // Default background color
 RGBf bgColor;
 
+// Control variables for the different features
 GLboolean antialias = GL_FALSE;
 GLboolean reflection = GL_FALSE;
 GLboolean transparency = GL_FALSE;
-GLboolean softShadows = GL_TRUE;
+GLboolean depthOfField = GL_FALSE;
 
 
 void init() {
+    // Set backgroud color
     bgColor = newRGB(0, 0, 0);
 
-    // The viewpoint, e
+    // Set the viewpoint
     e = newVector(5, 0, 0);
 
     // Calculate basis vectors
@@ -60,20 +62,23 @@ void init() {
     u = scaleVector(1/mag(upCrossW), upCrossW);
     v = cross(w, u);
 
-    // Variables for diffuse shading
+    // Initialize lights in the scene
     light[0] = newVector(0,-1,-1);
     light[0] = scaleVector(1/mag(light[0]),light[0]);
 
     light[1] = newVector(0,-1,1);
     light[1] = scaleVector(1/mag(light[1]),light[1]);
 
+    light[2] = newVector(-1,1,1);
+    light[2] = scaleVector(1/mag(light[2]),light[2]);
+
     // Create spheres in scene
-    spheres[4].r = 1;
-    spheres[4].c = newVector(-0, 1, 1);
-    spheres[4].color = newRGB(255,0,0);
-    spheres[4].id = 0;
-    spheres[4].ri = 1;
-    spheres[4].reflective = 1;
+    spheres[0].r = 1;
+    spheres[0].c = newVector(-2, -1, 1);
+    spheres[0].color = newRGB(255,255,0);
+    spheres[0].id = 3;
+    spheres[0].ri = 1;
+    spheres[0].reflective = 1;
 
     spheres[1].r = 1;
     spheres[1].c = newVector(2, -1, -1);
@@ -96,12 +101,12 @@ void init() {
     spheres[3].ri = 1;
     spheres[3].reflective = 1;
 
-    spheres[0].r = 1;
-    spheres[0].c = newVector(-2, -1, 1);
-    spheres[0].color = newRGB(255,255,0);
-    spheres[0].id = 3;
-    spheres[0].ri = 1;
-    spheres[0].reflective = 1;
+    spheres[4].r = 1;
+    spheres[4].c = newVector(-0, 1, 1);
+    spheres[4].color = newRGB(255,0,0);
+    spheres[4].id = 0;
+    spheres[4].ri = 1;
+    spheres[4].reflective = 1;
 }
 
 float calcIntersection(Ray ray, Sphere sphere) {
@@ -338,10 +343,12 @@ RGBf antialiasPixel(int i, int j) {
             x = (float)i + ((float)p+r) / samples;
             y = (float)j + ((float)q+r) / samples;
 
-            Vector origin;
-            origin.x = e.x;
-            origin.y = e.y + ((float)q+r) / samples;
-            origin.z = e.z + ((float)p+r) / samples;
+            Vector origin = e;
+
+            if (depthOfField) {
+                origin.y += ((float)q+r) / samples;
+                origin.z += ((float)p+r) / samples;
+            }
 
             // Compute viewing ray
             Ray viewingRay = computeViewingRay(x,y,origin);
@@ -365,7 +372,7 @@ void display(void) {
         for (int j=0; j<window_width; j++) {
             RGBf pixelColor;
 
-            if (antialias) {
+            if (antialias || depthOfField) {
                 pixelColor = antialiasPixel(i,j);
             } else {
                 pixelColor = castRay(computeViewingRay(i,j,e), 5);
@@ -400,15 +407,30 @@ void keyboard(unsigned char key, int x, int y) {
         case 'h':
             printf("HELP\n");
             printf("----\n");
+            printf("a - toggle antialiasing\n");
+            printf("d - toggle depth of field\n");
+            printf("r - toggle reflections\n");
+            printf("t - toggle transparency\n");
+            printf("l - increase number of lights (max: 3)\n");
+            printf("k - decrease number of lights (min: 1)\n");
             break;
         case 'a':
             toggle(&antialias);
+            break;
+        case 'd':
+            toggle(&depthOfField);
             break;
         case 'r':
             toggle(&reflection);
             break;
         case 't':
             toggle(&transparency);
+            break;
+        case 'l':
+            numLights += (numLights < 3) ? 1 : 0;
+            break;
+        case 'k':
+            numLights -= (numLights > 1) ? 1 : 0;
             break;
     }
     
